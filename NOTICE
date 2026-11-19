@@ -1,0 +1,26 @@
+In-Kino
+Copyright 2026 John-Thomas Eltringham and Felix Hildebrand
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository also contains third-party material under its own licenses:
+
+- android/gradlew, android/gradlew.bat, and android/gradle/wrapper/gradle-wrapper.jar:
+  the Gradle wrapper, copyright the original authors of Gradle, Apache License 2.0.
+  The jar carries its own license in META-INF/LICENSE.
+
+- demo/elephants-dream/subtitles.en.vtt: English captions for Elephants Dream from the
+  Video.js examples (v8.21.0), Copyright Brightcove, Inc., Apache License 2.0.
+
+The Elephants Dream demo catalogue built by demo/elephants-dream/build.py also contains
+material that is not part of this repository and is not under the Apache License:
+
+- A fingerprint derived from the Elephants Dream soundtrack, (c) copyright 2006,
+  Blender Foundation / Netherlands Media Art Institute / www.elephantsdream.org,
+  Creative Commons Attribution 2.5 (https://creativecommons.org/licenses/by/2.5/).
+
+- An audio description by JJ Hunt (http://www.jjhunt.com/), transcoded to AAC,
+  Creative Commons Attribution-ShareAlike 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/).
+
+See demo/elephants-dream/README.md for details.

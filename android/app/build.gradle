@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+
+// The repository's VERSION file is the single source of the version number.
+def appVersion = rootProject.file('../VERSION').text.trim()
+def (major, minor, patch) = appVersion.tokenize('.').collect { it as int }
+
+android {
+    namespace 'org.cinemaaccesslab.inkino'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.cinemaaccesslab.inkino'
+        minSdk 26
+        targetSdk 35
+        versionCode major * 10000 + minor * 100 + patch
+        versionName appVersion
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+// No runtime dependencies: the app uses platform APIs only. JUnit is used for tests.
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

@@ -1,0 +1,82 @@
+name: Demo catalogue
+
+# Builds the Elephants Dream demo package and a static test catalogue from Creative Commons
+# sources (see demo/elephants-dream/README.md). Run it by hand with "deploy" ticked to publish
+# the catalogue on GitHub Pages.
+
+on:
+  push:
+    paths:
+      - demo/**
+      - shared/**
+      - .github/workflows/demo.yml
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish the catalogue on GitHub Pages
+        type: boolean
+        default: false
+
+concurrency:
+  group: demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: desktop-publisher/requirements.txt
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          python -m pip install -r desktop-publisher/requirements.txt
+      - name: Cache source downloads
+        uses: actions/cache@v4
+        with:
+          path: demo/elephants-dream/.cache
+          key: elephants-dream-sources-${{ hashFiles('demo/elephants-dream/build.py') }}
+          restore-keys: elephants-dream-sources-
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build demo package and catalogue
+        run: >-
+          python demo/elephants-dream/build.py --out build/demo-site --commit "$GITHUB_SHA"
+          --excerpts build/demo-excerpts
+      - name: Check that the app's matcher finds the film
+        run: |
+          javac -d build/check android/app/src/main/java/org/cinemaaccesslab/inkino/core/*.java \
+            demo/elephants-dream/AppMatcherCheck.java
+          java -cp build/check AppMatcherCheck build/demo-excerpts
+      - name: Upload catalogue
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-catalogue
+          path: build/demo-site
+          include-hidden-files: true
+      - name: Prepare Pages upload
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/demo-site
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

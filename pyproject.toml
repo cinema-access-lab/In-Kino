@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+# FastAPI's dependency-injection idiom (File(...), Form(...), Depends(...)) trips B008.
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fingerprint_lab", "export_android", "package_validation", "static_catalog", "synthetic_media"]
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests"]

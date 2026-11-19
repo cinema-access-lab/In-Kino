@@ -1,0 +1,136 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>In-Kino · Publisher</title>
+    <link rel="stylesheet" href="/ui.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to publishing form</a>
+    <header>
+      <div class="layout">
+        <span class="eyebrow">In-Kino</span>
+        <h1>Accessible film publisher</h1>
+        <p>
+          Publish synchronized audiodescription and SDH. The online workflow creates a fingerprint
+          on this server; the local workflow uploads only the derived fingerprint.
+        </p>
+      </div>
+    </header>
+    <main class="layout" id="main">
+      <section class="panel" aria-labelledby="accessTitle">
+        <h2 id="accessTitle">Publisher access</h2>
+        <label for="token">Publishing token</label
+        ><input
+          id="token"
+          type="password"
+          autocomplete="off"
+          placeholder="Enter the server's admin token"
+        />
+        <p class="hint">
+          Kept in this page's memory only. Used to authorize uploads; ordinary film downloads do not
+          need a login.
+        </p>
+      </section>
+      <section class="panel" aria-labelledby="workflowTitle">
+        <h2 id="workflowTitle">1. Choose ingestion method</h2>
+        <fieldset>
+          <legend>Where is the original film audio processed?</legend>
+          <label class="choice"
+            ><input type="radio" name="mode" value="online" checked />
+            <span
+              ><strong>Online — create the fingerprint here</strong
+              ><small
+                >Upload original film WAV, AD and/or SDH. Reference WAV is discarded after
+                fingerprint generation.</small
+              ></span
+            ></label
+          >
+          <label class="choice"
+            ><input type="radio" name="mode" value="local" />
+            <span
+              ><strong>Local — fingerprint already generated</strong
+              ><small
+                >Upload .csref, AD and/or SDH. Original film audio is never transferred.</small
+              ></span
+            ></label
+          >
+        </fieldset>
+      </section>
+      <form id="publishForm" class="panel" novalidate>
+        <h2>2. Enter film information</h2>
+        <label for="title">Film title</label
+        ><input id="title" name="film_title" required maxlength="160" placeholder="Film title" />
+        <label for="existing">Existing film ID (optional — add a new presentation version)</label
+        ><input id="existing" name="film_id" placeholder="Leave blank to assign a new film ID" />
+        <div class="two">
+          <div>
+            <label for="version">Presentation / cut</label
+            ><input id="version" name="version_label" required value="Theatrical 24 fps" />
+          </div>
+          <div>
+            <label for="fps">Picture frame rate</label
+            ><select id="fps" name="fps">
+              <option value="24">24 fps</option>
+              <option value="25">25 fps</option>
+              <option value="23.976">23.976 fps</option>
+              <option value="30">30 fps</option>
+            </select>
+          </div>
+        </div>
+        <label for="language">Reference soundtrack language (BCP 47)</label
+        ><input id="language" name="language" required value="de" />
+        <h2>3. Select assets</h2>
+        <div id="onlineInput">
+          <label for="reference">Original reference soundtrack — PCM WAV (server generation)</label
+          ><input id="reference" type="file" name="reference_audio" accept=".wav,audio/wav" />
+        </div>
+        <div id="localInput" hidden>
+          <label for="fp">Reference fingerprint — .csref (local generation)</label
+          ><input id="fp" type="file" name="fingerprint" accept=".csref" />
+        </div>
+        <label for="ad">Audiodescription — M4A/WAV (optional)</label
+        ><input id="ad" type="file" name="ad" accept=".m4a,.wav,audio/*" />
+        <label for="adlang">AD language</label><input id="adlang" name="ad_language" value="de" />
+        <label for="sdh">SDH subtitles — SRT/VTT (optional)</label
+        ><input id="sdh" type="file" name="sdh" accept=".srt,.vtt,text/plain" />
+        <label for="sdhlang">SDH language</label
+        ><input id="sdhlang" name="sdh_language" value="de" />
+        <p class="hint">
+          At least one AD or SDH file is required. All assets must refer to the same presentation
+          timeline.
+        </p>
+        <button id="upload" type="submit" class="primary">Upload and create draft</button>
+      </form>
+      <section class="panel" aria-labelledby="statusTitle">
+        <h2 id="statusTitle">4. Review and publish</h2>
+        <p id="status" class="status" role="status" aria-live="polite">No draft uploaded yet.</p>
+        <dl id="outcome" hidden>
+          <dt>Film ID</dt>
+          <dd id="filmId"></dd>
+          <dt>Version ID</dt>
+          <dd id="versionId"></dd>
+          <dt>Duration</dt>
+          <dd id="duration"></dd>
+        </dl>
+        <button type="button" id="publish" disabled class="primary">
+          Publish validated version
+        </button>
+      </section>
+      <section class="panel" aria-labelledby="catalogTitle">
+        <h2 id="catalogTitle">Published catalogue</h2>
+        <button id="refresh" type="button">Refresh catalogue</button>
+        <div id="catalog" aria-live="polite"></div>
+      </section>
+    </main>
+    <footer class="layout">
+      <p>
+        Prototype · Use only with content you are authorized to process and distribute · Server must
+        use HTTPS outside a trusted test network.
+      </p>
+    </footer>
+    <script src="/ui.js"></script>
+  </body>
+</html>

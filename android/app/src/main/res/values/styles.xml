@@ -1,0 +1,17 @@
+<resources>
+    <!-- Palette and native widget styling are independently replaceable. See docs/theming.md. -->
+    <color name="cinema_background">#091620</color>
+    <color name="cinema_surface">#132532</color>
+    <color name="cinema_teal">#69E4D0</color>
+    <color name="cinema_text">#F5FAFC</color>
+    <style name="Base.AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/cinema_teal</item>
+        <item name="android:windowBackground">@color/cinema_background</item>
+        <item name="android:navigationBarColor">@color/cinema_background</item>
+        <item name="android:statusBarColor">@color/cinema_background</item>
+    </style>
+    <style name="AppTheme" parent="Base.AppTheme" />
+</resources>
