@@ -44,6 +44,14 @@ On the first reviewed build, the AD track lined up with the film exactly (cross-
 0.85 to 0.96, zero offset), and the film matched the master within 0.1 s. The master runs
 658 s, about 4 s longer than the AD track.
 
+## Copies of the film to play
+
+The fingerprint matches the copies on the
+[Internet Archive](https://archive.org/details/ElephantsDream) and on Blender's
+[download server](https://download.blender.org/ED/): every version from 480p to 1080p, in
+MP4, MOV, AVI, and OGV, and the 3D versions. They were checked on 20 November 2026 with the
+app's matcher at the same four points in the film as the build checks.
+
 ## Known gaps
 
 - The subtitles are dialogue only. Proper SDH adds speaker labels and sound descriptions
@@ -54,7 +62,10 @@ On the first reviewed build, the AD track lined up with the film exactly (cross-
 
 ## Run it locally
 
-You need Python 3.12+, `ffmpeg`, and the desktop publisher's requirements:
+You need Python 3.12 or newer and FFmpeg. On Windows, install FFmpeg with
+`winget install Gyan.FFmpeg` and open a new terminal afterwards.
+
+Run these commands from the repository's top folder, not from this folder:
 
 ```sh
 pip install -r desktop-publisher/requirements.txt
@@ -62,8 +73,30 @@ python demo/elephants-dream/build.py --out build/demo-site
 python -m http.server --directory build/demo-site 8000
 ```
 
-Then set the app's catalogue server to `http://<computer-ip>:8000` (debug builds only allow
-plain HTTP).
+The first build downloads the sources into `demo/elephants-dream/.cache` and takes a few
+minutes. Later builds reuse the downloads. The last command serves the catalogue until you
+press Ctrl+C. To check that it works, open <http://localhost:8000/api/catalog> on the same
+computer.
+
+To use it on a phone, install a debug build of the app, because release builds only connect
+over HTTPS. Then connect the phone in one of two ways:
+
+- On the same network as the computer: set the app's catalogue server to
+  `http://<computer-ip>:8000`. `ipconfig` (Windows) or `ip addr` (Linux) shows the address.
+- With a USB cable, if the phone and computer are on different networks: turn on USB
+  debugging on the phone, start the server with `--bind 127.0.0.1` added, then run
+  `adb reverse tcp:8000 tcp:8000` on the computer and set the server to
+  `http://127.0.0.1:8000`. `adb` is part of Android's
+  [platform tools](https://developer.android.com/tools/releases/platform-tools). In
+  PowerShell, run it from its folder as `.\adb.exe`. Repeat the command whenever you
+  reconnect the cable.
+
+Then open Online Catalogue, download Elephants Dream, and play one of the copies listed above
+on the computer.
+
+If the catalogue opens in the computer's browser but the app reports that no server is
+answering, another program is probably using port 8000. Pick another port, such as 8765, and
+use it in all three places: the server command, `adb reverse`, and the app's server address.
 
 To publish the same package on your own catalogue server instead, use the desktop publisher
 with the master WAV, the AD file, and the subtitles. It fingerprints locally and uploads only

@@ -33,7 +33,8 @@ Some details:
   changing playback speed by at most ±0.5% instead of jumping. The rules are in the
   [synchronization correction policy](docs/sync-correction.md).
 - AD stays muted until Android confirms the audio is going to
-  headphones, so description never plays over the phone speaker in an auditorium.
+  headphones or a hearing aid, so description never plays over the phone speaker in an
+  auditorium.
 
 ## Components
 
@@ -58,6 +59,26 @@ TalkBack users, the server has a single shared publisher token, and the Android 
 session still lives in an Activity rather than a service. [ROADMAP.md](ROADMAP.md) lists what
 comes next, and [SECURITY.md](SECURITY.md) explains why the server must not be exposed to
 the internet yet.
+
+## Try it
+
+You need an Android phone (Android 8 or newer), headphones, and a second screen with
+speakers to play the film on, such as a laptop.
+
+1. On the phone, download the `.apk` file from the latest
+   [release](https://github.com/cinema-access-lab/In-Kino/releases) and open it to install
+   the app. Android asks once whether to allow installs from your browser.
+2. In the app, open **Online Catalogue**, tap **Use the demo catalogue**, and download
+   *Elephants Dream*.
+3. On the other screen, open
+   [Elephants Dream on the Internet Archive](https://archive.org/details/ElephantsDream).
+4. In the app, open the film from **My Films** and put on your headphones. The app starts
+   listening straight away. Then play the film with the sound on.
+
+Within about 20 seconds the phone recognizes the film and the audio description starts in
+your headphones. Try skipping forward or back in the film: the description follows. Please
+report problems, with the phone model, under
+[Issues](https://github.com/cinema-access-lab/In-Kino/issues).
 
 ## Getting started
 

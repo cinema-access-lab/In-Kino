@@ -8,8 +8,8 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -36,8 +36,8 @@ jobs:
       GJF_VERSION: '1.24.0'
       GJF_FLAGS: --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -50,9 +50,9 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: gradle/actions/wrapper-validation@v4
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: gradle/actions/wrapper-validation@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -62,21 +62,24 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null
           "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Unit tests
         working-directory: android
         run: ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Assemble debug APK
         working-directory: android
         run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Assemble unsigned release APK
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assembleRelease
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-reports
           path: android/app/build/reports/tests
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: in-kino-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk

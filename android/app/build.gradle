@@ -14,6 +14,20 @@ android {
         versionCode major * 10000 + minor * 100 + patch
         versionName appVersion
     }
+    // Release builds are signed only when the release workflow provides the key. Local release
+    // builds stay unsigned, and debug builds use the usual debug key.
+    def keystore = System.getenv('INKINO_KEYSTORE')
+    if (keystore) {
+        signingConfigs {
+            release {
+                storeFile file(keystore)
+                storePassword System.getenv('INKINO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('INKINO_KEY_ALIAS')
+                keyPassword System.getenv('INKINO_KEY_PASSWORD')
+            }
+        }
+        buildTypes.release.signingConfig signingConfigs.release
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

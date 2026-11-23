@@ -90,7 +90,13 @@ The library is the core of the next phase.
 - Library downloads with space estimates, resume, and updates, plus clear handling of
   withdrawn or revised packages.
 - A warning before playing tracks published for a different film version.
-- Multiple AD and SDH tracks per film version (languages, easy-read variants).
+- Multiple AD and SDH tracks per film version (languages, easy-read variants), with a
+  selector for the tracks to play and default choices in Settings, such as English AD or
+  French subtitles. Only the chosen tracks are downloaded. The fingerprint is always needed,
+  because both AD and subtitles follow the film clock it provides. For now, the app
+  downloads and plays every track of a film version.
+- Show the headphone check and the subtitles only to the people who use them, based on
+  those choices.
 - Credits and license information per film package, shown in the app. For now, the demo
   film's credits are on the About screen.
 - A UI-only move to Jetpack Compose is worth evaluating if it brings a measurable benefit.

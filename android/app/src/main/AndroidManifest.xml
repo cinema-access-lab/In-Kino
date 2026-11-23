@@ -27,6 +27,8 @@
                   android:label="@string/settings_title" />
         <activity android:name=".AboutActivity" android:exported="false"
                   android:label="@string/about_title" />
+        <activity android:name=".ManualSetupActivity" android:exported="false"
+                  android:label="@string/home_manual_player" />
         <activity android:name=".MainActivity" android:exported="false" android:label="@string/player_title"
                   android:configChanges="orientation|screenSize|keyboardHidden" />
         <service android:name=".SessionForegroundService" android:exported="false"

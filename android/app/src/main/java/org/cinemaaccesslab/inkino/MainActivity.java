@@ -11,8 +11,8 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.database.Cursor;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -30,25 +30,28 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.provider.OpenableColumns;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.cinemaaccesslab.inkino.core.*;
 import org.cinemaaccesslab.inkino.subtitles.SubtitleTimeline;
 import org.cinemaaccesslab.inkino.ui.CinemaUi;
+import org.cinemaaccesslab.inkino.ui.ShiftControl;
+import org.cinemaaccesslab.inkino.ui.SubtitleControlBar;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -66,11 +69,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * commercial SDK). IMPORTANT: Experimental. Not safe for audience-facing accessibility delivery.
  */
 public final class MainActivity extends Activity {
-    private static final int LOAD_FP = 10,
-            LOAD_AD = 11,
-            EXPORT_LOG = 12,
-            MIC_PERMISSION = 13,
-            LOAD_SDH = 14;
+    // What the player is opened with: files of a downloaded package (app-private paths from the
+    // catalogue), or document URIs chosen on the manual setup page. Fingerprint is required.
+    static final String EXTRA_TITLE = "package_title";
+    static final String EXTRA_FINGERPRINT_PATH = "package_fingerprint";
+    static final String EXTRA_AD_PATH = "package_ad";
+    static final String EXTRA_SDH_PATH = "package_sdh";
+    static final String EXTRA_FINGERPRINT_URI = "manual_fingerprint";
+    static final String EXTRA_AD_URI = "manual_ad";
+    static final String EXTRA_SDH_URI = "manual_sdh";
+
+    private static final int EXPORT_LOG = 1, MIC_PERMISSION = 2;
     private static final int AUDIO_SR = 44100,
             WINDOW_SECONDS = 8,
             INPUT_SAMPLES = AUDIO_SR * WINDOW_SECONDS;
@@ -102,11 +111,10 @@ public final class MainActivity extends Activity {
     private long adSeekingSinceMs;
     private final Runnable stopAdTestRunnable =
             () -> stopAdTest("AD test finished after 10 seconds");
-    private int confirmedAmbiguousOutputId = -1;
     private String lastAdStatus = "";
     private Uri adUri;
     private volatile SubtitleTimeline subtitleTimeline;
-    private TextView subtitleView, fullscreenSubtitleView, subtitleFileView, subtitleSizeView;
+    private TextView subtitleView, fullscreenSubtitleView;
     private TextView headingView;
     private static final String TAG = "InKinoPlayer";
     private SyncClock.State lastSyncState = null;
@@ -116,8 +124,18 @@ public final class MainActivity extends Activity {
     private int previousOrientationRequest = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private int previousDisplayOrientation = Configuration.ORIENTATION_PORTRAIT;
     private int previousUiVisibility = 0;
-    private CheckBox subtitlesEnabled, subtitleAnnouncements;
-    private EditText subtitleOffsetInput;
+    private LinearLayout subtitleSection;
+    private ShiftControl subtitleShift;
+    private SubtitleControlBar subtitleControls;
+    private TextView timingHelpView;
+    private boolean adEnabled = true;
+    private View adShiftView;
+    // Shifts in milliseconds; positive means earlier. Settings holds the lasting default, the
+    // player adds a temporary shift for this screening on top.
+    private int settingsAdShiftMs,
+            settingsSubtitleShiftMs,
+            sessionAdShiftMs,
+            sessionSubtitleShiftMs;
     private int subtitleSizeSp = 32;
     private String lastCueDisplayed = null;
     private LinearLayout diagnosticsPanel;
@@ -125,17 +143,13 @@ public final class MainActivity extends Activity {
     private TextView statusView,
             timeView,
             metricsView,
-            fingerprintView,
-            adView,
             routingView,
             adStatusView,
             adProgressView,
             outputDiagnosticsView;
     private EditText testPositionInput;
     private Button testAdButton;
-    private Button startButton;
-    private CheckBox bluetoothConsent;
-    private EditText offsetInput;
+    private Button adToggle;
     private String lastStatus = "", latestDetails = "No match yet";
     private final StringBuilder log =
             new StringBuilder(
@@ -147,8 +161,9 @@ public final class MainActivity extends Activity {
             new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
+                    // Stop in the notification closes the player; opening the film starts again.
                     if (SessionForegroundService.ACTION_STOP_UI.equals(intent.getAction()))
-                        stopListening();
+                        finish();
                 }
             };
 
@@ -156,20 +171,12 @@ public final class MainActivity extends Activity {
             new AudioDeviceCallback() {
                 @Override
                 public void onAudioDevicesAdded(AudioDeviceInfo[] devices) {
-                    handler.post(
-                            () -> {
-                                revalidateConfirmedOutput();
-                                verifyHeadphones();
-                            });
+                    handler.post(MainActivity.this::verifyHeadphones);
                 }
 
                 @Override
                 public void onAudioDevicesRemoved(AudioDeviceInfo[] devices) {
-                    handler.post(
-                            () -> {
-                                revalidateConfirmedOutput();
-                                verifyHeadphones();
-                            });
+                    handler.post(MainActivity.this::verifyHeadphones);
                 }
             };
 
@@ -179,7 +186,11 @@ public final class MainActivity extends Activity {
         // Allow the display to sleep: an active session uses a user-visible FGS + partial wake
         // lock.
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
-        subtitleSizeSp = CinemaPreferences.get(this).getInt(CinemaPreferences.SUBTITLE_SIZE, 32);
+        subtitleSizeSp =
+                CinemaPreferences.get(this)
+                        .getInt(
+                                CinemaPreferences.SUBTITLE_SIZE,
+                                CinemaPreferences.SUBTITLE_SIZE_DEFAULT);
         buildUi();
         IntentFilter stopFilter = new IntentFilter(SessionForegroundService.ACTION_STOP_UI);
         if (Build.VERSION.SDK_INT >= 33)
@@ -239,102 +250,101 @@ public final class MainActivity extends Activity {
         headingView = (TextView) header.getChildAt(1);
         root.addView(header);
 
-        // The actual listener experience belongs at the top, before setup and diagnostics.
+        // Only what matters during the film. Synchronization starts as soon as the fingerprint is
+        // loaded and stops when the page closes. Files are chosen before this screen (catalogue or
+        // manual setup), and sections for tracks the film doesn't have stay hidden.
         statusView = CinemaUi.statusPill(this);
-        setStatus(getString(R.string.player_ready), CinemaUi.Tone.NEUTRAL);
+        setStatus(getString(R.string.player_preparing), CinemaUi.Tone.NEUTRAL);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
         statusParams.gravity = Gravity.CENTER_HORIZONTAL;
         statusParams.topMargin = dp(8);
         root.addView(statusView, statusParams);
-        timeView = text("--:--:--.---", 40, WHITE, true);
-        timeView.setTypeface(android.graphics.Typeface.MONOSPACE);
+        timeView = text(formatTime(Double.NaN), 40, WHITE, true);
+        timeView.setTypeface(Typeface.MONOSPACE);
         timeView.setGravity(Gravity.CENTER_HORIZONTAL);
         timeView.setPadding(0, dp(12), 0, dp(12));
         root.addView(timeView);
-        startButton = button(getString(R.string.action_start_sync), true);
-        startButton.setOnClickListener(
-                v -> {
-                    if (listening) stopListening();
-                    else startListeningWithPermission();
-                });
-        root.addView(startButton);
 
-        root.addView(CinemaUi.sectionHeading(this, getString(R.string.subtitles)));
-        subtitleView = text(getString(R.string.subtitle_placeholder), subtitleSizeSp, WHITE, true);
+        settingsAdShiftMs = CinemaPreferences.get(this).getInt(CinemaPreferences.AD_SHIFT_MS, 0);
+        settingsSubtitleShiftMs =
+                CinemaPreferences.get(this).getInt(CinemaPreferences.SUBTITLE_SHIFT_MS, 0);
+
+        // Audio description: an on/off switch, where it plays, and its timing.
+        adToggle = button(getString(R.string.ad_toggle_on), true);
+        adToggle.setContentDescription(getString(R.string.audio_description));
+        adToggle.setAccessibilityDelegate(
+                new View.AccessibilityDelegate() {
+                    @Override
+                    public void onInitializeAccessibilityNodeInfo(
+                            View host, AccessibilityNodeInfo info) {
+                        super.onInitializeAccessibilityNodeInfo(host, info);
+                        // TalkBack reads it as a switch: "Audio description, on".
+                        info.setClassName(Switch.class.getName());
+                        info.setCheckable(true);
+                        info.setChecked(adEnabled);
+                    }
+                });
+        adToggle.setOnClickListener(v -> setAdEnabled(!adEnabled));
+        adToggle.setVisibility(View.GONE);
+        root.addView(adToggle);
+        routingView = text("", 18, WHITE, false);
+        routingView.setGravity(Gravity.CENTER_HORIZONTAL);
+        routingView.setPadding(0, 0, 0, dp(8));
+        routingView.setVisibility(View.GONE);
+        root.addView(routingView);
+        adShiftView =
+                new ShiftControl(
+                                this,
+                                getString(R.string.audio_description),
+                                settingsAdShiftMs,
+                                0,
+                                total -> {
+                                    sessionAdShiftMs = total - settingsAdShiftMs;
+                                    // Small shifts are below the automatic correction's limits, so
+                                    // the AD seeks to its new position once.
+                                    adPrimed = false;
+                                })
+                        .view();
+        adShiftView.setVisibility(View.GONE);
+        root.addView(adShiftView, CinemaUi.listItem(this));
+
+        // Subtitles: the box, a way into fullscreen, and their timing.
+        subtitleSection = new LinearLayout(this);
+        subtitleSection.setOrientation(LinearLayout.VERTICAL);
+        subtitleSection.setVisibility(View.GONE);
+        subtitleSection.addView(CinemaUi.sectionHeading(this, getString(R.string.subtitles)));
+        // The box on this page keeps the standard size; the chosen size is for fullscreen.
+        subtitleView = text("", CinemaPreferences.SUBTITLE_SIZE_DEFAULT, WHITE, true);
         subtitleView.setGravity(Gravity.CENTER);
         CinemaUi.card(this, subtitleView);
         subtitleView.setPadding(dp(14), dp(17), dp(14), dp(17));
         subtitleView.setMinHeight(dp(142));
         // Do not continuously interrupt TalkBack while AD is playing. Announcements are opt-in.
         subtitleView.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_NONE);
-        attachFullscreenGesture(subtitleView);
-        subtitleView.setContentDescription(getString(R.string.subtitle_display_description));
-        root.addView(subtitleView);
-        root.addView(CinemaUi.caption(this, getString(R.string.subtitle_fullscreen_hint)));
-        subtitlesEnabled = new CheckBox(this);
-        subtitlesEnabled.setText(R.string.show_subtitles);
-        CinemaUi.styleCheckBox(subtitlesEnabled);
-        subtitlesEnabled.setChecked(true);
-        subtitlesEnabled.setOnCheckedChangeListener(
-                (v, enabled) -> {
-                    lastCueDisplayed = null;
-                    String initial =
-                            getString(
-                                    enabled
-                                            ? (subtitleTimeline == null
-                                                    ? R.string.subtitles_load_to_begin
-                                                    : R.string.subtitles_waiting)
-                                            : R.string.subtitles_hidden);
-                    subtitleView.setText(initial);
-                    if (fullscreenSubtitleView != null) fullscreenSubtitleView.setText(initial);
-                    updateSubtitleAccessibilityDescription(initial);
-                });
-        root.addView(subtitlesEnabled);
-        LinearLayout sizeRow;
-        Button smaller = button("A−", false), larger = button("A+", false);
-        smaller.setContentDescription(getString(R.string.size_smaller));
-        larger.setContentDescription(getString(R.string.size_larger));
-        smaller.setOnClickListener(v -> changeSubtitleSize(-4));
-        larger.setOnClickListener(v -> changeSubtitleSize(4));
-        sizeRow = CinemaUi.pair(this, smaller, larger);
-        root.addView(sizeRow);
-        subtitleSizeView =
-                CinemaUi.caption(this, getString(R.string.subtitle_size_label, subtitleSizeSp));
-        root.addView(subtitleSizeView);
-
-        root.addView(CinemaUi.sectionHeading(this, getString(R.string.files_heading)));
-        fingerprintView = text(getString(R.string.fingerprint_not_loaded), 17, SUBTEXT, false);
-        root.addView(fingerprintView);
-        Button selectFp = button(getString(R.string.load_fingerprint), false);
-        selectFp.setOnClickListener(v -> openFile(LOAD_FP, "*/*"));
-        root.addView(selectFp);
-
-        subtitleFileView = text(getString(R.string.sdh_not_loaded), 17, SUBTEXT, false);
-        root.addView(subtitleFileView);
-        Button selectSub = button(getString(R.string.load_subtitles), false);
-        selectSub.setOnClickListener(v -> openFile(LOAD_SDH, "*/*"));
-        root.addView(selectSub);
-
-        adView = text(getString(R.string.ad_not_loaded), 17, SUBTEXT, false);
-        root.addView(adView);
-        Button selectAd = button(getString(R.string.load_ad), false);
-        selectAd.setOnClickListener(v -> openFile(LOAD_AD, "audio/*"));
-        root.addView(selectAd);
-        routingView = text(getString(R.string.headphones_required), 17, ACCENT, true);
-        routingView.setPadding(0, dp(16), 0, dp(4));
-        root.addView(routingView);
-        bluetoothConsent = new CheckBox(this);
-        bluetoothConsent.setText(R.string.headphones_consent);
-        CinemaUi.styleCheckBox(bluetoothConsent);
-        bluetoothConsent.setOnCheckedChangeListener(
-                (view, checked) -> {
-                    AudioDeviceInfo candidate = findAmbiguousOutput();
-                    confirmedAmbiguousOutputId =
-                            (checked && candidate != null) ? candidate.getId() : -1;
-                    verifyHeadphones();
-                });
-        root.addView(bluetoothConsent);
-        root.addView(CinemaUi.caption(this, getString(R.string.subtitles_work_alone)));
+        attachFullscreenGesture(subtitleView, null);
+        subtitleSection.addView(subtitleView);
+        subtitleSection.addView(CinemaUi.caption(this, getString(R.string.subtitle_hint)));
+        Button fullscreen = button(getString(R.string.fullscreen_button), false);
+        fullscreen.setOnClickListener(v -> enterSubtitleFullscreen());
+        subtitleSection.addView(fullscreen);
+        subtitleShift =
+                new ShiftControl(
+                        this,
+                        getString(R.string.subtitles),
+                        settingsSubtitleShiftMs,
+                        0,
+                        total -> {
+                            sessionSubtitleShiftMs = total - settingsSubtitleShiftMs;
+                            lastCueDisplayed = null;
+                            if (subtitleControls != null)
+                                subtitleControls.setValues(total, subtitleSizeSp);
+                        });
+        subtitleSection.addView(subtitleShift.view(), CinemaUi.listItem(this));
+        root.addView(subtitleSection);
+        updateSubtitleAccessibilityDescription("");
+        timingHelpView = CinemaUi.caption(this, getString(R.string.timing_player_help));
+        timingHelpView.setVisibility(View.GONE);
+        root.addView(timingHelpView);
 
         diagnosticsToggle = button(getString(R.string.show_advanced), false);
         ((LinearLayout.LayoutParams) diagnosticsToggle.getLayoutParams()).topMargin =
@@ -382,55 +392,14 @@ public final class MainActivity extends Activity {
                     else startAdTest();
                 });
         diagnosticsPanel.addView(testAdButton);
-        diagnosticsPanel.addView(
-                text(
-                        "AD timing adjustment, seconds. Leave at 0 unless testing alignment.",
-                        16,
-                        SUBTEXT,
-                        false));
-        offsetInput = new EditText(this);
-        offsetInput.setText("0");
-        offsetInput.setSingleLine(true);
-        offsetInput.setInputType(
-                android.text.InputType.TYPE_CLASS_NUMBER
-                        | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
-                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        CinemaUi.styleInput(offsetInput);
-        offsetInput.setContentDescription("AD timeline adjustment, seconds");
-        diagnosticsPanel.addView(offsetInput);
-        diagnosticsPanel.addView(
-                text("Subtitle timeline adjustment, seconds (normally 0)", 16, SUBTEXT, false));
-        subtitleOffsetInput = new EditText(this);
-        subtitleOffsetInput.setText("0");
-        subtitleOffsetInput.setSingleLine(true);
-        subtitleOffsetInput.setInputType(
-                android.text.InputType.TYPE_CLASS_NUMBER
-                        | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
-                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        CinemaUi.styleInput(subtitleOffsetInput);
-        subtitleOffsetInput.setContentDescription("SDH timeline offset in seconds");
-        diagnosticsPanel.addView(subtitleOffsetInput);
-        subtitleAnnouncements = new CheckBox(this);
-        subtitleAnnouncements.setText("Announce each subtitle with TalkBack (optional)");
-        CinemaUi.styleCheckBox(subtitleAnnouncements);
-        subtitleAnnouncements.setOnCheckedChangeListener(
-                (view, checked) -> {
-                    int mode =
-                            checked
-                                    ? View.ACCESSIBILITY_LIVE_REGION_POLITE
-                                    : View.ACCESSIBILITY_LIVE_REGION_NONE;
-                    subtitleView.setAccessibilityLiveRegion(mode);
-                    if (fullscreenSubtitleView != null)
-                        fullscreenSubtitleView.setAccessibilityLiveRegion(mode);
-                    CinemaPreferences.get(this)
-                            .edit()
-                            .putBoolean(CinemaPreferences.SUBTITLE_ANNOUNCEMENTS, checked)
-                            .apply();
+        // The AD test stops listening; this starts it again without reopening the film.
+        Button listen = button("Start or stop listening", false);
+        listen.setOnClickListener(
+                v -> {
+                    if (listening) stopListening();
+                    else startListeningWithPermission();
                 });
-        diagnosticsPanel.addView(subtitleAnnouncements);
-        subtitleAnnouncements.setChecked(
-                CinemaPreferences.get(this)
-                        .getBoolean(CinemaPreferences.SUBTITLE_ANNOUNCEMENTS, false));
+        diagnosticsPanel.addView(listen);
         Button previewSub = button("Preview subtitles at test position", false);
         previewSub.setOnClickListener(v -> previewSubtitlesAtTestPosition());
         diagnosticsPanel.addView(previewSub);
@@ -453,40 +422,120 @@ public final class MainActivity extends Activity {
         fullscreenSubtitleView.setGravity(Gravity.CENTER);
         fullscreenSubtitleView.setBackgroundColor(Color.BLACK);
         fullscreenSubtitleView.setPadding(dp(30), dp(18), dp(30), dp(18));
-        fullscreenSubtitleView.setAutoSizeTextTypeUniformWithConfiguration(
-                Math.max(18, subtitleSizeSp - 10), subtitleSizeSp, 2, TypedValue.COMPLEX_UNIT_SP);
-        attachFullscreenGesture(fullscreenSubtitleView);
+        applyFullscreenSize();
+        subtitleControls =
+                new SubtitleControlBar(
+                        this,
+                        new SubtitleControlBar.Listener() {
+                            @Override
+                            public void onShift(int deltaMs) {
+                                subtitleShift.step(deltaMs);
+                                subtitleControls.show();
+                            }
+
+                            @Override
+                            public void onResize(int direction) {
+                                resizeSubtitles(direction);
+                                subtitleControls.show();
+                            }
+                        });
+        subtitleControls.setValues(subtitleShift.totalMs(), subtitleSizeSp);
+        attachFullscreenGesture(fullscreenSubtitleView, subtitleControls::toggle);
         fullscreenSubtitleView.setContentDescription(getString(R.string.fullscreen_description));
+        fullscreenSubtitleView.setAccessibilityDelegate(
+                new View.AccessibilityDelegate() {
+                    @Override
+                    public void onInitializeAccessibilityNodeInfo(
+                            View host, AccessibilityNodeInfo info) {
+                        super.onInitializeAccessibilityNodeInfo(host, info);
+                        info.addAction(
+                                new AccessibilityNodeInfo.AccessibilityAction(
+                                        R.id.action_show_controls,
+                                        getString(R.string.fullscreen_show_controls)));
+                    }
+
+                    @Override
+                    public boolean performAccessibilityAction(View host, int action, Bundle args) {
+                        if (action == R.id.action_show_controls) {
+                            subtitleControls.show();
+                            return true;
+                        }
+                        return super.performAccessibilityAction(host, action, args);
+                    }
+                });
         fullscreenSubtitleLayer.addView(
                 fullscreenSubtitleView, new FrameLayout.LayoutParams(-1, -1));
+        subtitleControls.attachTo(fullscreenSubtitleLayer);
         content.addView(fullscreenSubtitleLayer, new FrameLayout.LayoutParams(-1, -1));
         setContentView(content);
         CinemaUi.edgeToEdge(this, scroll);
         verifyHeadphones();
-        loadDownloadedPackage(getIntent());
+        loadTracks(getIntent());
     }
 
-    private void loadDownloadedPackage(Intent intent) {
-        if (intent == null || !intent.hasExtra("package_fingerprint")) return;
+    /** Shows the sections for the tracks this film has: AD, subtitles, or both. */
+    private void showTrackSections(boolean hasAd, boolean hasSubtitles) {
+        adToggle.setVisibility(hasAd ? View.VISIBLE : View.GONE);
+        routingView.setVisibility(hasAd ? View.VISIBLE : View.GONE);
+        adShiftView.setVisibility(hasAd ? View.VISIBLE : View.GONE);
+        subtitleSection.setVisibility(hasSubtitles ? View.VISIBLE : View.GONE);
+        timingHelpView.setVisibility(hasAd || hasSubtitles ? View.VISIBLE : View.GONE);
+    }
+
+    /** Switches the audio description on or off. Synchronization and subtitles carry on. */
+    private void setAdEnabled(boolean enabled) {
+        adEnabled = enabled;
+        adToggle.setText(enabled ? R.string.ad_toggle_on : R.string.ad_toggle_off);
+        CinemaUi.setPrimary(adToggle, enabled);
+        if (enabled) adPrimed = false; // Seek to the current film position before playing.
+        else pauseAd();
+    }
+
+    /** Changes the fullscreen text size and keeps it as the new default, like the setting. */
+    private void resizeSubtitles(int direction) {
+        subtitleSizeSp = CinemaPreferences.nextSubtitleSize(subtitleSizeSp, direction);
+        applyFullscreenSize();
+        CinemaPreferences.get(this)
+                .edit()
+                .putInt(CinemaPreferences.SUBTITLE_SIZE, subtitleSizeSp)
+                .apply();
+        subtitleControls.setValues(subtitleShift.totalMs(), subtitleSizeSp);
+    }
+
+    private void loadTracks(Intent intent) {
+        if (intent == null) return;
+        if (intent.hasExtra(EXTRA_FINGERPRINT_URI)) {
+            String fp = intent.getStringExtra(EXTRA_FINGERPRINT_URI);
+            String ad = intent.getStringExtra(EXTRA_AD_URI);
+            String sdh = intent.getStringExtra(EXTRA_SDH_URI);
+            showTrackSections(ad != null, sdh != null);
+            loadFingerprint(Uri.parse(fp));
+            if (sdh != null) loadSubtitles(Uri.parse(sdh));
+            if (ad != null) loadAd(Uri.parse(ad));
+            return;
+        }
+        if (!intent.hasExtra(EXTRA_FINGERPRINT_PATH)) {
+            setStatus(getString(R.string.player_no_film), CinemaUi.Tone.WARNING);
+            return;
+        }
+        showTrackSections(intent.hasExtra(EXTRA_AD_PATH), intent.hasExtra(EXTRA_SDH_PATH));
         // Only app-private paths provided by our own non-exported Activity are accepted.
         try {
             String base =
                     new java.io.File(getFilesDir(), "packages").getCanonicalPath()
                             + java.io.File.separator;
-            String title = intent.getStringExtra("package_title");
-            if (title != null && !title.isEmpty()) {
-                headingView.setText(title);
-                setStatus(getString(R.string.player_ready_film), CinemaUi.Tone.NEUTRAL);
-            }
-            for (String key : new String[] {"package_fingerprint", "package_sdh", "package_ad"}) {
+            String title = intent.getStringExtra(EXTRA_TITLE);
+            if (title != null && !title.isEmpty()) headingView.setText(title);
+            for (String key :
+                    new String[] {EXTRA_FINGERPRINT_PATH, EXTRA_SDH_PATH, EXTRA_AD_PATH}) {
                 String path = intent.getStringExtra(key);
                 if (path == null) continue;
                 java.io.File f = new java.io.File(path);
                 if (!f.getCanonicalPath().startsWith(base) || !f.isFile())
                     throw new IOException("Invalid package file");
                 Uri uri = Uri.fromFile(f);
-                if (key.equals("package_fingerprint")) loadFingerprint(uri);
-                else if (key.equals("package_sdh")) loadSubtitles(uri);
+                if (key.equals(EXTRA_FINGERPRINT_PATH)) loadFingerprint(uri);
+                else if (key.equals(EXTRA_SDH_PATH)) loadSubtitles(uri);
                 else loadAd(uri);
             }
         } catch (Exception e) {
@@ -494,8 +543,11 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Double-tap on the subtitle surface; TalkBack's Activate action uses performClick. */
-    private void attachFullscreenGesture(TextView target) {
+    /**
+     * Double-tap on the subtitle surface toggles fullscreen; TalkBack's Activate action uses
+     * performClick. A single tap runs onSingleTap, if there is one.
+     */
+    private void attachFullscreenGesture(TextView target, Runnable onSingleTap) {
         GestureDetector detector =
                 new GestureDetector(
                         this,
@@ -507,6 +559,7 @@ public final class MainActivity extends Activity {
 
                             @Override
                             public boolean onSingleTapConfirmed(MotionEvent event) {
+                                if (onSingleTap != null) onSingleTap.run();
                                 return true;
                             }
 
@@ -537,6 +590,8 @@ public final class MainActivity extends Activity {
         previousDisplayOrientation = getResources().getConfiguration().orientation;
         previousUiVisibility = getWindow().getDecorView().getSystemUiVisibility();
         subtitleFullscreen = true;
+        // Someone reading subtitles doesn't touch the phone, so the screen must not time out.
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         fullscreenSubtitleView.setText(subtitleView.getText());
         updateSubtitleAccessibilityDescription(subtitleView.getText().toString());
         manualScroll.setVisibility(View.GONE);
@@ -557,6 +612,8 @@ public final class MainActivity extends Activity {
     private void exitSubtitleFullscreen() {
         if (!subtitleFullscreen) return;
         subtitleFullscreen = false;
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        subtitleControls.hide();
         fullscreenSubtitleLayer.setVisibility(View.GONE);
         manualScroll.setVisibility(View.VISIBLE);
         getWindow().getDecorView().setSystemUiVisibility(previousUiVisibility);
@@ -584,40 +641,24 @@ public final class MainActivity extends Activity {
         else super.onBackPressed();
     }
 
-    private void changeSubtitleSize(int delta) {
-        subtitleSizeSp = Math.max(22, Math.min(52, subtitleSizeSp + delta));
-        subtitleView.setTextSize(subtitleSizeSp);
-        if (fullscreenSubtitleView != null) {
-            fullscreenSubtitleView.setTextSize(subtitleSizeSp);
-            fullscreenSubtitleView.setAutoSizeTextTypeUniformWithConfiguration(
-                    Math.max(18, subtitleSizeSp - 10),
-                    subtitleSizeSp,
-                    2,
-                    TypedValue.COMPLEX_UNIT_SP);
-        }
-        subtitleSizeView.setText(getString(R.string.subtitle_size_label, subtitleSizeSp));
-        CinemaPreferences.get(this)
-                .edit()
-                .putInt(CinemaPreferences.SUBTITLE_SIZE, subtitleSizeSp)
-                .apply();
+    /**
+     * Fullscreen subtitles use the chosen size, and only shrink when a long subtitle wouldn't fit
+     * on the screen at that size.
+     */
+    private void applyFullscreenSize() {
+        if (fullscreenSubtitleView == null) return;
+        fullscreenSubtitleView.setAutoSizeTextTypeUniformWithConfiguration(
+                Math.min(18, subtitleSizeSp), subtitleSizeSp, 2, TypedValue.COMPLEX_UNIT_SP);
     }
 
     private double subtitleOffsetSeconds() {
-        if (subtitleOffsetInput == null) return 0;
-        try {
-            return Double.parseDouble(
-                    subtitleOffsetInput.getText().toString().trim().replace(',', '.'));
-        } catch (NumberFormatException empty) {
-            return 0;
-        } // An empty or partial entry means no adjustment.
+        return (settingsSubtitleShiftMs + sessionSubtitleShiftMs) / 1000.0;
     }
 
     private void renderSubtitles(SyncClock.State state, double film) {
-        if (subtitleView == null || subtitlesEnabled == null) return;
+        if (subtitleView == null) return;
         String next = "";
-        if (!subtitlesEnabled.isChecked()) next = getString(R.string.subtitles_hidden);
-        else if (subtitleTimeline == null) next = getString(R.string.subtitle_placeholder);
-        else if (PlaybackTimelinePolicy.hasVerifiedOrigin(state)) {
+        if (subtitleTimeline != null && PlaybackTimelinePolicy.hasVerifiedOrigin(state)) {
             if (Double.isFinite(film))
                 next =
                         subtitleTimeline.textAt(
@@ -652,8 +693,6 @@ public final class MainActivity extends Activity {
     }
 
     private void loadSubtitles(Uri uri) {
-        final String filename = name(uri);
-        subtitleFileView.setText(getString(R.string.loading_sdh, filename));
         background.execute(
                 () -> {
                     try (InputStream in = getContentResolver().openInputStream(uri)) {
@@ -664,35 +703,17 @@ public final class MainActivity extends Activity {
                         handler.post(
                                 () -> {
                                     subtitleTimeline = loaded;
-                                    subtitleFileView.setText(
-                                            getString(R.string.sdh_ready, filename, loaded.size()));
                                     lastCueDisplayed = null;
-                                    if (!listening)
-                                        subtitleView.setText(R.string.subtitles_loaded_press_start);
                                 });
                     } catch (Exception e) {
                         handler.post(
                                 () -> {
-                                    subtitleFileView.setText(
-                                            getString(R.string.sdh_error, e.getMessage()));
-                                    toast(
-                                            getString(
-                                                    R.string.subtitles_load_failed,
-                                                    e.getMessage()));
+                                    setStatus(
+                                            getString(R.string.sdh_error, e.getMessage()),
+                                            CinemaUi.Tone.ERROR);
                                 });
                     }
                 });
-    }
-
-    private void openFile(int request, String mime) {
-        if (listening) stopListening();
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(mime);
-        intent.addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, request);
     }
 
     @Override
@@ -700,17 +721,6 @@ public final class MainActivity extends Activity {
         super.onActivityResult(request, result, intent);
         if (result != RESULT_OK || intent == null || intent.getData() == null) return;
         Uri uri = intent.getData();
-        if (request == LOAD_FP || request == LOAD_AD || request == LOAD_SDH) {
-            try {
-                getContentResolver()
-                        .takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (SecurityException notPersistable) {
-                /* The picker still grants access for this session. */
-            }
-        }
-        if (request == LOAD_FP) loadFingerprint(uri);
-        if (request == LOAD_AD) loadAd(uri);
-        if (request == LOAD_SDH) loadSubtitles(uri);
         if (request == EXPORT_LOG) {
             final String snapshot = log.toString();
             background.execute(
@@ -726,25 +736,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private String name(Uri uri) {
-        try (Cursor c =
-                getContentResolver()
-                        .query(
-                                uri,
-                                new String[] {OpenableColumns.DISPLAY_NAME},
-                                null,
-                                null,
-                                null)) {
-            if (c != null && c.moveToFirst()) return c.getString(0);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "No display name for " + uri, e);
-        }
-        if ("file".equals(uri.getScheme())) return uri.getLastPathSegment();
-        return getString(R.string.selected_file);
-    }
-
     private void loadFingerprint(Uri uri) {
-        final String filename = name(uri);
         setStatus(getString(R.string.loading_fingerprint), CinemaUi.Tone.NEUTRAL);
         background.execute(
                 () -> {
@@ -755,14 +747,11 @@ public final class MainActivity extends Activity {
                                 () -> {
                                     reference = loaded;
                                     matcher = new LandmarkMatcher(loaded);
-                                    fingerprintView.setText(
-                                            getString(
-                                                    R.string.fingerprint_loaded,
-                                                    filename,
-                                                    formatTime(loaded.durationSeconds)));
                                     setStatus(
-                                            getString(R.string.fingerprint_ready),
+                                            getString(R.string.player_ready_film),
                                             CinemaUi.Tone.NEUTRAL);
+                                    // Opening the player means watching now: start listening.
+                                    if (foreground && !listening) startListeningWithPermission();
                                 });
                     } catch (Exception e) {
                         handler.post(
@@ -781,7 +770,6 @@ public final class MainActivity extends Activity {
     private void loadAd(Uri uri) {
         closeAd();
         adUri = uri;
-        adView.setText(getString(R.string.preparing_ad, name(uri)));
         showAdStatus("Decoding metadata / preparing AD file…");
         try {
             adPlayer = new MediaPlayer();
@@ -796,7 +784,9 @@ public final class MainActivity extends Activity {
                         handler.post(
                                 () -> {
                                     closeAd();
-                                    adView.setText(R.string.ad_decode_failed);
+                                    setStatus(
+                                            getString(R.string.ad_decode_failed),
+                                            CinemaUi.Tone.ERROR);
                                     showAdStatus(
                                             "Media decoder error (what="
                                                     + what
@@ -810,11 +800,6 @@ public final class MainActivity extends Activity {
                     mp -> {
                         adPrepared = true;
                         adPrimed = false;
-                        adView.setText(
-                                getString(
-                                        R.string.ad_ready,
-                                        name(uri),
-                                        formatTime(mp.getDuration() / 1000.0)));
                         showAdStatus("AD decoded and ready. Run the AD test before synchronizing.");
                         verifyHeadphones();
                     });
@@ -859,7 +844,7 @@ public final class MainActivity extends Activity {
             adPlayer.prepareAsync();
         } catch (Exception e) {
             closeAd();
-            adView.setText(getString(R.string.ad_error, e.getMessage()));
+            setStatus(getString(R.string.ad_error, e.getMessage()), CinemaUi.Tone.ERROR);
             showAdStatus("AD could not be opened: " + e.getMessage());
         }
     }
@@ -892,18 +877,6 @@ public final class MainActivity extends Activity {
         if (adStatusView != null) adStatusView.setText("AD: " + message);
     }
 
-    // Bluetooth SCO is a *call* profile. Never select it for media playback.
-    private AudioDeviceInfo findAmbiguousOutput() {
-        AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        AudioDeviceInfo usb = null;
-        for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return device;
-            if (device.getType() == AudioDeviceInfo.TYPE_USB_DEVICE
-                    || device.getType() == AudioDeviceInfo.TYPE_USB_ACCESSORY) usb = device;
-        }
-        return usb;
-    }
-
     /** User-facing name of an output, for example "Wired headphones". */
     private String deviceLabel(AudioDeviceInfo device) {
         if (device == null) return getString(R.string.device_none);
@@ -914,6 +887,8 @@ public final class MainActivity extends Activity {
                 return getString(R.string.device_bt_call);
             case AudioDeviceInfo.TYPE_BLE_HEADSET:
                 return getString(R.string.device_ble);
+            case AudioDeviceInfo.TYPE_HEARING_AID:
+                return getString(R.string.device_hearing_aid);
             case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
                 return getString(R.string.device_wired_headphones);
             case AudioDeviceInfo.TYPE_WIRED_HEADSET:
@@ -946,6 +921,9 @@ public final class MainActivity extends Activity {
                 break;
             case AudioDeviceInfo.TYPE_BLE_HEADSET:
                 label = "Bluetooth LE headset";
+                break;
+            case AudioDeviceInfo.TYPE_HEARING_AID:
+                label = "hearing aid";
                 break;
             case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
                 label = "wired headphones";
@@ -989,16 +967,6 @@ public final class MainActivity extends Activity {
                         : "AD started muted. Verifying the headphone route…");
     }
 
-    private void revalidateConfirmedOutput() {
-        if (confirmedAmbiguousOutputId < 0) return;
-        AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (device.getId() == confirmedAmbiguousOutputId) return;
-        }
-        confirmedAmbiguousOutputId = -1;
-        if (bluetoothConsent != null) bluetoothConsent.setChecked(false);
-    }
-
     private void startAdTest() {
         if (!adPrepared || adPlayer == null) {
             showAdStatus(
@@ -1007,7 +975,7 @@ public final class MainActivity extends Activity {
         }
         AudioDeviceInfo route = headsetOutput();
         if (route == null) {
-            showAdStatus("Test blocked: connect headphones or confirm the Bluetooth or USB output");
+            showAdStatus("Test blocked: connect headphones");
             return;
         }
         if (listening) stopListening();
@@ -1065,48 +1033,47 @@ public final class MainActivity extends Activity {
         showAdStatus(explanation);
     }
 
+    /** The personal output Android most likely plays media through, or null if there is none. */
     private AudioDeviceInfo headsetOutput() {
         AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        AudioDeviceInfo wired = null, le = null, approvedA2dp = null, approvedUsb = null;
+        AudioDeviceInfo best = null;
+        int bestRank = HeadphoneOutputs.NOT_PERSONAL;
         for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            switch (device.getType()) {
-                case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
-                case AudioDeviceInfo.TYPE_WIRED_HEADSET:
-                case AudioDeviceInfo.TYPE_USB_HEADSET:
-                    wired = device;
-                    break;
-                case AudioDeviceInfo.TYPE_BLE_HEADSET:
-                    le = device;
-                    break;
-                case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
-                    if (bluetoothConsent != null
-                            && bluetoothConsent.isChecked()
-                            && confirmedAmbiguousOutputId == device.getId()) approvedA2dp = device;
-                    break;
-                case AudioDeviceInfo.TYPE_USB_DEVICE:
-                case AudioDeviceInfo.TYPE_USB_ACCESSORY:
-                    if (bluetoothConsent != null
-                            && bluetoothConsent.isChecked()
-                            && confirmedAmbiguousOutputId == device.getId()) approvedUsb = device;
-                    break;
-                default:
-                    break; // Excludes Bluetooth SCO (telephone audio).
+            int rank = HeadphoneOutputs.rank(device.getType());
+            if (rank < bestRank) {
+                best = device;
+                bestRank = rank;
             }
         }
-        if (wired != null) return wired;
-        if (le != null) return le;
-        if (approvedA2dp != null) return approvedA2dp;
-        return approvedUsb;
+        return best;
+    }
+
+    /** "Sony WH-1000XM4" for Bluetooth and similar devices, "Wired headphones" for wired ones. */
+    private String friendlyName(AudioDeviceInfo device) {
+        CharSequence product = device.getProductName();
+        if (HeadphoneOutputs.hasUsefulName(device.getType())
+                && product != null
+                && !product.toString().trim().isEmpty()
+                && !product.toString().equals(Build.MODEL)) return product.toString().trim();
+        return deviceLabel(device);
+    }
+
+    /** The line under the position: where the AD plays, or a request to connect headphones. */
+    private void showRoute(AudioDeviceInfo device) {
+        String text =
+                device == null
+                        ? getString(R.string.ad_connect_headphones)
+                        : getString(R.string.ad_plays_through, friendlyName(device));
+        if (text.contentEquals(routingView.getText())) return;
+        routingView.setText(text);
+        routingView.setTextColor(device == null ? CinemaUi.WARNING : WHITE);
+        if (routingView.getVisibility() == View.VISIBLE) routingView.announceForAccessibility(text);
     }
 
     private void verifyHeadphones() {
         if (routingView == null) return;
         AudioDeviceInfo route = headsetOutput();
-        routingView.setText(
-                route == null
-                        ? getString(R.string.no_headphones)
-                        : getString(R.string.headphones_ok, deviceLabel(route)));
-        routingView.setTextColor(route == null ? ACCENT : WHITE);
+        showRoute(route);
         if (route == null) {
             if (adTestActive) stopAdTest("AD test stopped: no approved headphones");
             else if (adPrepared) showAdStatus("Playback blocked: no approved headphone route");
@@ -1139,7 +1106,7 @@ public final class MainActivity extends Activity {
         if (code == MIC_PERMISSION) {
             if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED)
                 startListening();
-            else toast(getString(R.string.mic_permission_required));
+            else setStatus(getString(R.string.mic_permission_required), CinemaUi.Tone.ERROR);
         }
     }
 
@@ -1168,8 +1135,6 @@ public final class MainActivity extends Activity {
         int session = ++sessionGeneration;
         lastStatus = "";
         sessionStartNanos = SystemClock.elapsedRealtimeNanos();
-        startButton.setText(R.string.action_stop_sync);
-        startButton.setContentDescription(getString(R.string.action_stop_sync));
         lastSyncState = SyncClock.State.SEARCHING;
         setStatus(getString(R.string.status_listening), CinemaUi.Tone.ACTIVE);
         latestDetails = "Waiting for first eight-second sample";
@@ -1345,11 +1310,7 @@ public final class MainActivity extends Activity {
     }
 
     private double offsetSeconds() {
-        try {
-            return Double.parseDouble(offsetInput.getText().toString().trim().replace(',', '.'));
-        } catch (NumberFormatException empty) {
-            return 0;
-        } // An empty or partial entry means no adjustment.
+        return (settingsAdShiftMs + sessionAdShiftMs) / 1000.0;
     }
 
     /**
@@ -1381,6 +1342,10 @@ public final class MainActivity extends Activity {
 
     private void updateAd(SyncClock.State state, double filmNow) {
         if (!adPrepared || adPlayer == null || adTestActive) return;
+        if (!adEnabled) {
+            pauseAd();
+            return;
+        }
         AudioDeviceInfo headphones = headsetOutput();
         if (headphones == null) {
             pauseAd();
@@ -1497,12 +1462,8 @@ public final class MainActivity extends Activity {
             } else showAdStatus("AD muted until Android confirms the headphone output");
             return;
         }
-        if (actual.getId() != expected.getId()) {
-            String reason =
-                    "Actual media route "
-                            + deviceName(actual)
-                            + " differs from approved "
-                            + deviceName(expected);
+        if (!HeadphoneOutputs.isPersonal(actual.getType())) {
+            String reason = "Actual media route " + deviceName(actual) + " is not headphones";
             if (adTestActive) stopAdTest("Output stopped: " + reason);
             else {
                 pauseAd();
@@ -1514,6 +1475,7 @@ public final class MainActivity extends Activity {
             adPlayer.setVolume(1f, 1f);
             actualOutputVerified = true;
         }
+        showRoute(actual);
         if (level == 0)
             showAdStatus("Headphones verified, but media volume is zero. Raise the media volume.");
         else if (adTestActive)
@@ -1551,7 +1513,7 @@ public final class MainActivity extends Activity {
                         observedLockGeneration = lockGeneration;
                         if (state == SyncClock.State.SEARCHING
                                 || state == SyncClock.State.VERIFYING)
-                            timeView.setText("--:--:--.---");
+                            timeView.setText(formatTime(Double.NaN));
                         else timeView.setText(formatTime(film));
                         CinemaUi.Tone tone;
                         int message;
@@ -1645,15 +1607,14 @@ public final class MainActivity extends Activity {
         stopService(new Intent(this, SessionForegroundService.class));
         handler.removeCallbacks(analyzeTick);
         if (adPlayer != null) pauseAd();
-        startButton.setText(R.string.action_start_sync);
-        startButton.setContentDescription(getString(R.string.action_start_sync));
         lastSyncState = null;
         setStatus(getString(R.string.status_stopped), CinemaUi.Tone.NEUTRAL);
-        timeView.setText("--:--:--.---");
+        timeView.setText(formatTime(Double.NaN));
         lastCueDisplayed = null;
         renderSubtitles(SyncClock.State.SEARCHING, Double.NaN);
     }
 
+    /** Film time with milliseconds, or dashes before the film is recognized. */
     private static String formatTime(double seconds) {
         if (!Double.isFinite(seconds) || seconds < 0) return "--:--:--.---";
         long ms = Math.round(seconds * 1000);
@@ -1684,12 +1645,18 @@ public final class MainActivity extends Activity {
         foreground = true;
         int saved =
                 CinemaPreferences.get(this).getInt(CinemaPreferences.SUBTITLE_SIZE, subtitleSizeSp);
-        if (subtitleView != null && saved != subtitleSizeSp)
-            changeSubtitleSize(saved - subtitleSizeSp);
-        if (subtitleAnnouncements != null)
-            subtitleAnnouncements.setChecked(
-                    CinemaPreferences.get(this)
-                            .getBoolean(CinemaPreferences.SUBTITLE_ANNOUNCEMENTS, false));
+        if (saved != subtitleSizeSp) {
+            subtitleSizeSp = saved;
+            applyFullscreenSize();
+            subtitleControls.setValues(subtitleShift.totalMs(), subtitleSizeSp);
+        }
+        int mode =
+                CinemaPreferences.get(this)
+                                .getBoolean(CinemaPreferences.SUBTITLE_ANNOUNCEMENTS, false)
+                        ? View.ACCESSIBILITY_LIVE_REGION_POLITE
+                        : View.ACCESSIBILITY_LIVE_REGION_NONE;
+        if (subtitleView != null) subtitleView.setAccessibilityLiveRegion(mode);
+        if (fullscreenSubtitleView != null) fullscreenSubtitleView.setAccessibilityLiveRegion(mode);
     }
 
     @Override

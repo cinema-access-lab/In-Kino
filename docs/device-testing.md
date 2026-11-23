@@ -9,18 +9,29 @@ need a real phone. Record the device model, Android version, and headphones for 
 1. The home screen shows **My Films**, **Online Catalogue**, **Manual Player**, and a menu.
    TalkBack reads each control correctly.
 2. Repeat the checks below with TalkBack enabled and with large system fonts.
-3. In the Manual Player, a single tap on the subtitle display does nothing. A double tap opens
+3. In the player, a single tap on the subtitle display does nothing. A double tap opens
    fullscreen landscape subtitles. A second double tap, or Back, returns to the player.
+   While fullscreen, the screen doesn't time out. A single tap shows a small bar with subtitle
+   timing and text size, which hides again after 4 seconds; the text size is kept as the new
+   default. With TalkBack, the bar is opened through the subtitles' actions menu.
 4. With TalkBack, the subtitle display offers the fullscreen toggle as its click action. Cues
    are not announced unless the announcement setting is on.
 
+5. The Manual Player's setup page reports each file's check result, warns about a length
+   mismatch, and only enables Continue with a fingerprint and at least one track.
+6. The timing buttons move AD and subtitles by 0.1 seconds and TalkBack announces the new
+   value. A shift set in Settings is still there after restarting the app; a shift made on
+   the player is not.
+
 ## Audio routing
 
-1. AD stays muted on the phone speaker and earpiece.
-2. Wired headphones, Bluetooth (A2DP) headphones, and USB headsets each play AD once the route
-   is confirmed. Bluetooth and generic USB outputs also need the "this is headphones" checkbox.
-3. Disconnecting headphones during playback mutes AD.
-4. Rotation and fullscreen subtitles do not interrupt or restart AD.
+1. AD stays muted on the phone speaker and earpiece, and the player asks for headphones.
+2. Wired headphones, Bluetooth (A2DP) headphones, USB headsets, and hearing aids each play AD
+   once Android confirms the route. The player names the device.
+3. A Bluetooth speaker also plays AD, because Android reports it like headphones. Check that
+   its name is shown clearly enough to notice.
+4. Disconnecting headphones during playback mutes AD.
+5. Rotation and fullscreen subtitles do not interrupt or restart AD.
 
 ## Synchronization
 
@@ -39,12 +50,15 @@ need a real phone. Record the device model, Android version, and headphones for 
 
 ## Lifecycle
 
-1. Start synchronization with the screen on, then turn the screen off and put the phone in a
-   pocket. AD continues, and the session notification is visible.
-2. Stop the session with the main button and with the notification action. Both stop the
-   microphone and AD and remove the notification.
-3. Check behaviour under the device's battery optimization settings.
-4. Known limitation: if Android destroys the Activity or kills the process, the session does
+1. Opening a film starts listening without any button; the first time, Android asks for
+   microphone permission. Turn the screen off and put the phone in a pocket. AD continues,
+   and the session notification is visible.
+2. Leave the player with Back, and stop the session from the notification. Both stop the
+   microphone and AD and remove the notification; the notification also closes the player.
+3. Switching audio description off silences it at once while subtitles continue. Switching
+   it on again resumes at the right place. TalkBack reads the toggle as a switch.
+4. Check behaviour under the device's battery optimization settings.
+5. Known limitation: if Android destroys the Activity or kills the process, the session does
    not resume.
 
 ## Catalogue and offline library

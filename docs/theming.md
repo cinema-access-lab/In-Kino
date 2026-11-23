@@ -36,8 +36,12 @@ Android 12+ the same mark is the launch screen (`res/values-v31/styles.xml`).
   marked as accessibility headings.
 - Layout: `column` (standard screen margins), `stacked` (full-width button with standard gap),
   `pair` (two buttons side by side), and `listItem` (list entry with standard gap).
-- Controls: `button` (primary or secondary, flat, at least 56dp tall), `iconButton` (a single
-  symbol with a spoken label), `styleInput`, and `styleCheckBox`.
+- Controls: `button` (primary or secondary, flat, at least 56dp tall), `setPrimary` (switches
+  a button between the two looks, for on/off toggles), `iconButton` (a single symbol with a
+  spoken label), `styleInput`, and `styleCheckBox`.
+- Timing: `ShiftControl` moves a track earlier or later in 0.1-second steps and announces the
+  new value; `SubtitleControlBar` is the small bar over fullscreen subtitles, with timing and
+  text size.
 - Lists: `filmRow` (title, detail, and status label in one tappable card with a single
   spoken description), and `emptyState`.
 - Screens: `screenHeader` (back button and title for every screen except Home).

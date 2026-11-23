@@ -14,6 +14,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.cinemaaccesslab.inkino.ui.CinemaUi;
+import org.cinemaaccesslab.inkino.ui.ShiftControl;
 
 import java.net.URI;
 
@@ -47,12 +48,32 @@ public final class SettingsActivity extends Activity {
         CinemaUi.styleInput(server);
         root.addView(server, new LinearLayout.LayoutParams(-1, -2));
         root.addView(CinemaUi.caption(this, getString(R.string.settings_server_help)));
+        Button demo = CinemaUi.button(this, getString(R.string.use_demo_catalogue), false);
+        demo.setOnClickListener(
+                v -> {
+                    server.setText(CinemaPreferences.DEMO_SERVER_ORIGIN);
+                    server.setError(null);
+                });
+        root.addView(demo, CinemaUi.stacked(this));
 
         // Subtitles
         root.addView(CinemaUi.sectionHeading(this, getString(R.string.subtitles)));
         int[] currentSize = {
-            CinemaPreferences.get(this).getInt(CinemaPreferences.SUBTITLE_SIZE, 32)
+            CinemaPreferences.get(this)
+                    .getInt(
+                            CinemaPreferences.SUBTITLE_SIZE,
+                            CinemaPreferences.SUBTITLE_SIZE_DEFAULT)
         };
+        // The buttons come before the preview, so they stay in reach when the preview is huge.
+        Button smaller = CinemaUi.button(this, "A−", false),
+                larger = CinemaUi.button(this, "A+", false);
+        smaller.setContentDescription(getString(R.string.size_smaller));
+        larger.setContentDescription(getString(R.string.size_larger));
+        root.addView(CinemaUi.pair(this, smaller, larger));
+        TextView size = CinemaUi.caption(this, "");
+        size.setGravity(Gravity.CENTER_HORIZONTAL);
+        size.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        root.addView(size);
         TextView preview =
                 CinemaUi.text(
                         this,
@@ -66,31 +87,22 @@ public final class SettingsActivity extends Activity {
         CinemaUi.card(this, preview);
         preview.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         root.addView(preview, CinemaUi.listItem(this));
-        TextView size = CinemaUi.caption(this, "");
-        size.setGravity(Gravity.CENTER_HORIZONTAL);
-        size.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         Runnable showSize =
                 () -> {
                     size.setText(getString(R.string.settings_text_size, currentSize[0]));
                     preview.setTextSize(currentSize[0]);
                 };
         showSize.run();
-        Button smaller = CinemaUi.button(this, "A−", false),
-                larger = CinemaUi.button(this, "A+", false);
-        smaller.setContentDescription(getString(R.string.size_smaller));
-        larger.setContentDescription(getString(R.string.size_larger));
         smaller.setOnClickListener(
                 v -> {
-                    currentSize[0] = Math.max(22, currentSize[0] - 4);
+                    currentSize[0] = CinemaPreferences.nextSubtitleSize(currentSize[0], -1);
                     showSize.run();
                 });
         larger.setOnClickListener(
                 v -> {
-                    currentSize[0] = Math.min(52, currentSize[0] + 4);
+                    currentSize[0] = CinemaPreferences.nextSubtitleSize(currentSize[0], +1);
                     showSize.run();
                 });
-        root.addView(CinemaUi.pair(this, smaller, larger));
-        root.addView(size);
 
         CheckBox announce = new CheckBox(this);
         announce.setText(R.string.settings_announce);
@@ -102,6 +114,27 @@ public final class SettingsActivity extends Activity {
         announceParams.topMargin = dp(12);
         root.addView(announce, announceParams);
         root.addView(CinemaUi.caption(this, getString(R.string.settings_announce_help)));
+
+        // Timing: a lasting shift, for example to make up for slow Bluetooth headphones. The player
+        // adds a temporary shift on top for a single screening.
+        root.addView(CinemaUi.sectionHeading(this, getString(R.string.timing_heading)));
+        root.addView(CinemaUi.caption(this, getString(R.string.timing_settings_help)));
+        ShiftControl adShift =
+                new ShiftControl(
+                        this,
+                        getString(R.string.audio_description),
+                        0,
+                        CinemaPreferences.get(this).getInt(CinemaPreferences.AD_SHIFT_MS, 0),
+                        null);
+        root.addView(adShift.view(), CinemaUi.listItem(this));
+        ShiftControl subtitleShift =
+                new ShiftControl(
+                        this,
+                        getString(R.string.subtitles),
+                        0,
+                        CinemaPreferences.get(this).getInt(CinemaPreferences.SUBTITLE_SHIFT_MS, 0),
+                        null);
+        root.addView(subtitleShift.view(), CinemaUi.listItem(this));
 
         root.addView(CinemaUi.sectionHeading(this, getString(R.string.settings_feedback_heading)));
         CheckBox vibrate = new CheckBox(this);
@@ -134,6 +167,8 @@ public final class SettingsActivity extends Activity {
                             .putBoolean(
                                     CinemaPreferences.SUBTITLE_ANNOUNCEMENTS, announce.isChecked())
                             .putBoolean(CinemaPreferences.VIBRATE_ON_LOCK, vibrate.isChecked())
+                            .putInt(CinemaPreferences.AD_SHIFT_MS, adShift.totalMs())
+                            .putInt(CinemaPreferences.SUBTITLE_SHIFT_MS, subtitleShift.totalMs())
                             .apply();
                     Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show();
                     finish();

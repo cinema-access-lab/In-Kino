@@ -76,14 +76,17 @@ give the phone something to match, play the film from a computer.
 
 1. Open `android/` in Android Studio with JDK 17 and Android SDK 36.
 2. Build and install the debug variant.
-3. Put the phone and computer on the same Wi-Fi and find the computer's IP address
-   (`ipconfig` on Windows).
+3. Put the phone and computer on the same network and find the computer's IP address
+   (`ipconfig` on Windows). If they are on different networks, connect them with a USB cable
+   and `adb reverse` instead, as described in the
+   [demo's README](../demo/elephants-dream/README.md#run-it-locally).
 4. In the app, open **Menu → Settings** and set the catalogue server address to
    `http://<computer-ip>:8765`.
 5. Open **Online Catalogue**, download a film, and it will appear under **My Films**.
-6. Turn off networking if you like, open the film, start synchronization, and play the
-   reference soundtrack. AD needs confirmed headphones. SDH works without.
+6. Turn off networking if you like, open the film, and play the reference soundtrack. The app
+   starts listening as soon as the film opens. AD needs headphones. SDH works without.
 
 Plain HTTP is only allowed in debug builds. Release builds require HTTPS.
 
-The **Manual Player** lets you load a `.csref`, AD, and SDH file directly, without a server.
+The **Manual Player** lets you choose a `.csref`, AD, and SDH file on the phone directly,
+without a server. It checks the files before opening the player.

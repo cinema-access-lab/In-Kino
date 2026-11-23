@@ -58,7 +58,8 @@ deliberately [stricter than the app](package-validation.md).
 The `VERSION` file sets the version everywhere: the Android `versionName`, the
 `versionCode` (major × 10000 + minor × 100 + patch), and the server's `/health` response. To
 release, change `VERSION` and add a matching `## x.y.z` section to `CHANGELOG.md`. CI fails
-if the changelog has no entry for the current version.
+if the changelog has no entry for the current version. Pushing a `v` tag publishes a signed
+APK, as described in [releasing the app](releasing.md).
 
 ## Dependencies
 

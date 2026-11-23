@@ -135,7 +135,7 @@ public final class CatalogActivity extends Activity {
         setContentView(scroll);
         CinemaUi.edgeToEdge(this, scroll);
         if (onlineMode) {
-            if (serverOrigin().isEmpty()) info.setText(R.string.set_server_first);
+            if (serverOrigin().isEmpty()) showDemoOffer();
             else fetchCatalog();
         } else renderLocal();
     }
@@ -146,6 +146,25 @@ public final class CatalogActivity extends Activity {
         if (!onlineMode) renderLocal();
         else if (!busy && !serverOrigin().isEmpty() && !serverOrigin().equals(loadedServerOrigin))
             fetchCatalog();
+    }
+
+    /** Without a server, offer the demo catalogue so a first-time tester has something to try. */
+    private void showDemoOffer() {
+        info.setText(R.string.set_server_first);
+        catalogList.removeAllViews();
+        Button demo = button(getString(R.string.use_demo_catalogue), true);
+        demo.setOnClickListener(
+                v -> {
+                    CinemaPreferences.get(this)
+                            .edit()
+                            .putString(
+                                    CinemaPreferences.SERVER_ORIGIN,
+                                    CinemaPreferences.DEMO_SERVER_ORIGIN)
+                            .apply();
+                    catalogList.removeAllViews();
+                    fetchCatalog();
+                });
+        catalogList.addView(demo, CinemaUi.stacked(this));
     }
 
     private String serverOrigin() {
@@ -209,7 +228,8 @@ public final class CatalogActivity extends Activity {
                     try {
                         HttpURLConnection con = request(origin + "/api/catalog");
                         if (con.getResponseCode() != 200)
-                            throw new IOException("Catalogue HTTP " + con.getResponseCode());
+                            throw new ConnectionErrors.HttpStatus(
+                                    "Catalogue", con.getResponseCode());
                         JSONObject content =
                                 new JSONObject(
                                         new String(
@@ -251,10 +271,34 @@ public final class CatalogActivity extends Activity {
                         ui.post(
                                 () -> {
                                     busy = false;
-                                    note(getString(R.string.catalogue_error, ex.getMessage()));
+                                    note(getString(R.string.catalogue_error, explain(ex)));
                                 });
                     }
                 });
+    }
+
+    /** A sentence a user can act on, instead of the exception's internal message. */
+    private String explain(Exception ex) {
+        Log.w(TAG, "Network request failed", ex);
+        switch (ConnectionErrors.classify(ex)) {
+            case NO_SERVER:
+                return getString(R.string.error_no_server);
+            case TIMEOUT:
+                return getString(R.string.error_timeout);
+            case UNKNOWN_HOST:
+                return getString(R.string.error_unknown_host);
+            case NOT_FOUND:
+                return getString(R.string.error_not_a_catalogue);
+            case HTTP_ERROR:
+                return getString(R.string.error_http, ConnectionErrors.httpCode(ex));
+            case HTTPS_REQUIRED:
+                return getString(R.string.error_https_required);
+            case SECURE_CONNECTION:
+                return getString(R.string.error_secure_connection);
+            default:
+                String message = ex.getMessage();
+                return message != null ? message : ex.getClass().getSimpleName();
+        }
     }
 
     private File base() {
@@ -381,7 +425,7 @@ public final class CatalogActivity extends Activity {
             Runnable onProgress)
             throws Exception {
         int rc = conn.getResponseCode();
-        if (rc != 200) throw new IOException("Asset HTTP " + rc);
+        if (rc != 200) throw new ConnectionErrors.HttpStatus("Asset", rc);
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         long size = 0;
         try (InputStream in = conn.getInputStream();
@@ -494,7 +538,7 @@ public final class CatalogActivity extends Activity {
                     } catch (Exception ex) {
                         if (stage != null) deleteTree(stage);
                         busy = false;
-                        note(getString(R.string.download_failed, ex.getMessage()));
+                        note(getString(R.string.download_failed, explain(ex)));
                     }
                 });
     }
@@ -512,14 +556,16 @@ public final class CatalogActivity extends Activity {
             File fp = new File(folder, files.getString("fingerprint"));
             if (!fp.isFile()) throw new IOException("Missing fingerprint");
             Intent player = new Intent(this, MainActivity.class);
-            player.putExtra("package_fingerprint", fp.getAbsolutePath());
+            player.putExtra(MainActivity.EXTRA_FINGERPRINT_PATH, fp.getAbsolutePath());
             if (files.has("ad"))
                 player.putExtra(
-                        "package_ad", new File(folder, files.getString("ad")).getAbsolutePath());
+                        MainActivity.EXTRA_AD_PATH,
+                        new File(folder, files.getString("ad")).getAbsolutePath());
             if (files.has("sdh"))
                 player.putExtra(
-                        "package_sdh", new File(folder, files.getString("sdh")).getAbsolutePath());
-            player.putExtra("package_title", pkg.optString("title"));
+                        MainActivity.EXTRA_SDH_PATH,
+                        new File(folder, files.getString("sdh")).getAbsolutePath());
+            player.putExtra(MainActivity.EXTRA_TITLE, pkg.optString("title"));
             startActivity(player);
         } catch (Exception e) {
             note(getString(R.string.open_failed, e.getMessage()));

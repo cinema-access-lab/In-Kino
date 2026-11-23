@@ -271,7 +271,10 @@ def main() -> None:
     args = parser.parse_args()
     for tool in ("ffmpeg", "ffprobe"):
         if not shutil.which(tool):
-            raise SystemExit(f"{tool} not found on PATH")
+            raise SystemExit(
+                f"{tool} was not found. Install FFmpeg (on Windows: winget install Gyan.FFmpeg),"
+                " then open a new terminal."
+            )
     args.cache.mkdir(parents=True, exist_ok=True)
 
     master = fetch("master", args.cache)

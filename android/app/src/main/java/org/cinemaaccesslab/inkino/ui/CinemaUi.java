@@ -198,7 +198,6 @@ public final class CinemaUi {
         b.setAllCaps(false);
         b.setTextSize(18);
         b.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        b.setTextColor(primary ? ON_ACCENT : TEXT);
         b.setGravity(Gravity.CENTER);
         // The platform button adds its own shadow and elevation animation; drop them so
         // buttons stay flat and never paint over their neighbours.
@@ -208,10 +207,17 @@ public final class CinemaUi {
         b.setPadding(h, dp(context, 10), h, dp(context, 10));
         b.setMinHeight(dp(context, 56));
         b.setMinimumHeight(dp(context, 56));
+        setPrimary(b, primary);
+        return b;
+    }
+
+    /** Filled accent (primary) or outlined (secondary) look, for example for an on/off toggle. */
+    public static void setPrimary(Button b, boolean primary) {
+        Context context = b.getContext();
+        b.setTextColor(primary ? ON_ACCENT : TEXT);
         GradientDrawable bg = rounded(context, primary ? ACCENT : SURFACE_RAISED, CORNER);
         if (!primary) bg.setStroke(dp(context, 1), BORDER);
         b.setBackground(ripple(primary ? 0x33000000 : 0x33FFFFFF, bg));
-        return b;
     }
 
     /** Borderless square button for a single symbol, with a spoken label. */

@@ -104,7 +104,7 @@ public final class HomeActivity extends Activity {
                 root,
                 getString(R.string.home_manual_player),
                 false,
-                () -> startActivity(new Intent(this, MainActivity.class)));
+                () -> startActivity(new Intent(this, ManualSetupActivity.class)));
 
         TextView version = CinemaUi.caption(this, versionLabel());
         version.setTextSize(13);

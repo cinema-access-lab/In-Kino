@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.1
+
+Android app:
+
+- The player starts listening as soon as a film opens, and stops when you leave it or press
+  Stop in the notification. It no longer has a start button.
+- The player shows the status and film position, an audio description switch with its
+  output and timing, and the subtitles with their timing. Sections for tracks a film doesn't
+  have are hidden.
+- The audio description switch silences only the description; synchronization and subtitles
+  carry on. TalkBack reads it as a switch.
+- Audio description and subtitles can be moved earlier or later in steps of 0.1 seconds: as
+  a lasting default in Settings, and for a single screening in the player.
+- Fullscreen subtitles have their own button besides the double tap, and keep the screen on.
+  A single tap shows a small bar to adjust the subtitle timing and text size.
+- The fullscreen text size goes up to 120 sp, and only shrinks when a long subtitle wouldn't
+  fit. The subtitle box in the player keeps the standard size.
+- The Manual Player opens a setup page first. It checks each chosen file and warns when the
+  audio description or subtitles don't match the film's length.
+- Bluetooth and USB headphones no longer need a confirmation checkbox. The player names the
+  device the audio description plays through, and still mutes it on the phone speaker or
+  when the headphones disconnect.
+- Hearing aids that connect directly to the phone (Android 9 and later) count as headphones.
+- Connection problems are explained in plain words, such as "No server is answering at this
+  address", instead of internal error messages.
+- Without a catalogue server, the Online Catalogue offers the demo catalogue in one tap, and
+  Settings has the same button.
+
+Demo and tooling:
+
+- Pushing a version tag builds a signed APK and publishes it as a GitHub release; see
+  `docs/releasing.md`. CI also builds the release variant on every push.
+- The README has a "Try it" section for testers.
+- The demo's README lists the public copies of Elephants Dream that match the fingerprint,
+  and explains how to connect a phone by USB when it can't reach the computer's network.
+- GitHub Actions are updated to their current versions.
+
 ## 0.8.0
 
 Android app:

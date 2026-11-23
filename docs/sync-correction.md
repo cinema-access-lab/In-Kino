@@ -17,8 +17,12 @@ markers planned for silent films, would feed the same clock.
 | AD playback more than 5 s off for 3 s | Resynchronizes the player to the clock |
 
 AD speed changes keep the pitch where the device supports it, and the subtitles read the same
-clock, so the two can't drift apart. The manual AD and SDH offsets in the app are never changed
-automatically.
+clock, so the two can't drift apart.
+
+Listeners can also move AD and subtitles earlier or later by hand, in steps of 0.1 seconds: a
+lasting default in Settings, for example for slow Bluetooth headphones, plus a temporary shift
+on the player for one screening. The shift is added after all clock calculations, and the
+automatic correction never changes it.
 
 At 0.5%, catching up one second takes about 200 seconds. That is deliberate: a slow, inaudible
 correction is better than a jump when it's unclear what happened.

@@ -75,6 +75,16 @@ explains how to test it safely.
 ## The app
 
 - Fingerprints use `.csref` version 1 (see [package validation](package-validation.md)).
+- Films from the catalogue open straight in the player. In the Manual Player, files are
+  chosen and checked on a setup page (`ManualSetupActivity`) first, so the player itself has
+  no file controls.
+- The app downloads and plays every track of a film version. With several languages per
+  version, it will need a track selector and should only download the chosen tracks; see the
+  [roadmap](../ROADMAP.md).
+- Audio description only plays on personal outputs: wired, USB, and Bluetooth headphones,
+  LE audio, and hearing aids (`HeadphoneOutputs.java`). It starts muted and becomes audible
+  once Android confirms it is really playing there. Android can't tell Bluetooth headphones
+  from Bluetooth speakers, so the player shows the device's name instead.
 - A foreground service keeps matching running with the screen off, but the session itself
   still lives in `MainActivity`. It does not survive the Activity being destroyed or the
   process being killed.
